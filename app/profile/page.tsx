@@ -21,14 +21,32 @@ export default async function ProfilePage() {
     redirect('/auth/login')
   }
 
+  const displayName =
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    user.email?.split('@')[0] ||
+    'User'
+
+  const avatarUrl = user.user_metadata?.avatar_url || null
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-6 py-16 bg-white">
       <div className="max-w-sm w-full space-y-8">
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gray-100 mx-auto text-3xl">
-            👤
-          </div>
-          <p className="text-gray-500 text-sm">{user.email}</p>
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt={displayName}
+              className="w-20 h-20 rounded-full mx-auto object-cover border-2 border-gray-100"
+            />
+          ) : (
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-indigo-100 mx-auto text-2xl font-bold text-indigo-600">
+              {displayName.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <p className="text-lg font-semibold text-gray-900">{displayName}</p>
+          <p className="text-gray-400 text-sm">{user.email}</p>
         </div>
 
         {verification ? (
