@@ -6,8 +6,8 @@ import { inchesToDisplay, heightsMatch } from '@/lib/height-utils'
 
 type Phase =
   | 'starting'
-  | 'positioning'   // guiding user to stand correctly
-  | 'ready'         // full body in frame, waiting to auto-capture
+  | 'positioning'
+  | 'ready'
   | 'countdown'
   | 'capturing'
   | 'analyzing'
@@ -18,7 +18,7 @@ type Phase =
   | 'error'
 
 const COUNTDOWN_SEC = 3
-const READY_HOLD_MS = 1500   // must hold good pose before countdown starts
+const READY_HOLD_MS = 1500
 const NOSE = 0
 const LEFT_HEEL = 29, RIGHT_HEEL = 30
 const LEFT_FOOT = 31, RIGHT_FOOT = 32
@@ -45,6 +45,12 @@ export default function HeightVerificationPage() {
   const [idHeight, setIdHeight] = useState(0)
   const [verifiedHeight, setVerifiedHeight] = useState(0)
 
+  // Separate loading state so camera shows before MediaPipe is ready
+  const [cameraReady, setCameraReady] = useState(false)
+  const [modelReady, setModelReady] = useState(false)
+  const [modelFailed, setModelFailed] = useState(false)
+  const [loadingStatus, setLoadingStatus] = useState('Starting camera…')
+
   useEffect(() => {
     setIdHeight(Number(sessionStorage.getItem('id_height_inches') || 0))
     setVerifiedHeight(Number(sessionStorage.getItem('verified_height_inches') || 0))
@@ -63,12 +69,46 @@ export default function HeightVerificationPage() {
     return c.toDataURL('image/jpeg', quality)
   }, [])
 
-  // Init camera + MediaPipe
+  // Start camera immediately (independent of MediaPipe)
   useEffect(() => {
-    if (phase !== 'starting') return
     let cancelled = false
 
-    async function init() {
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        })
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+        setCameraReady(true)
+        setLoadingStatus('Loading pose detection…')
+      } catch (err) {
+        if (!cancelled) {
+          setErrorMsg('Camera access failed. Please allow camera access and try again.')
+          setPhase('error')
+        }
+        console.error(err)
+      }
+    }
+
+    startCamera()
+    return () => { cancelled = true; stopCamera() }
+  }, [stopCamera])
+
+  // Load MediaPipe in parallel (independent of camera)
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadPose() {
       try {
         const { PoseLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision')
         const resolver = await FilesetResolver.forVisionTasks(
@@ -84,28 +124,45 @@ export default function HeightVerificationPage() {
         })
         if (cancelled) return
         detectorRef.current = detector
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        })
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
-        streamRef.current = stream
-        if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play() }
-        setPhase('positioning')
+        setModelReady(true)
       } catch (err) {
-        if (!cancelled) { setErrorMsg('Camera access failed. Please allow camera access.'); setPhase('error') }
-        console.error(err)
+        if (!cancelled) {
+          console.warn('MediaPipe failed to load, falling back to manual capture:', err)
+          setModelFailed(true)
+        }
       }
     }
 
-    init()
-    return () => { cancelled = true; stopCamera() }
-  }, [phase, stopCamera])
+    loadPose()
+    return () => { cancelled = true }
+  }, [])
+
+  // Transition to positioning once camera + (model or fallback) are ready
+  useEffect(() => {
+    if (phase !== 'starting') return
+    if (!cameraReady) return
+    if (!modelReady && !modelFailed) return
+
+    setPhase('positioning')
+    if (modelFailed) {
+      setFeedback('Stand with your full body in frame, then tap Capture')
+    } else {
+      setFeedback('Step back so your full body fits in frame')
+    }
+  }, [cameraReady, modelReady, modelFailed, phase])
 
   // Pose detection loop
   useEffect(() => {
     if (phase !== 'positioning' && phase !== 'ready') return
+
+    // No MediaPipe — allow manual capture immediately
+    if (!detectorRef.current) {
+      setPoseOk(true)
+      setPhase('ready')
+      setFeedback('Hold your ID card flat against your chest')
+      return
+    }
+
     let lastTs = -1
 
     function detect(now: number) {
@@ -130,10 +187,9 @@ export default function HeightVerificationPage() {
       const feetOk = (lm[LEFT_HEEL]?.visibility > VIS || lm[RIGHT_HEEL]?.visibility > VIS) &&
                      (lm[LEFT_FOOT]?.visibility > VIS || lm[RIGHT_FOOT]?.visibility > VIS)
 
-      // Check person isn't too small in frame (nose y should be in top 25%)
       const noseY = lm[NOSE]?.y ?? 0.5
       const heelY = Math.max(lm[LEFT_HEEL]?.y ?? 0, lm[RIGHT_HEEL]?.y ?? 0, lm[LEFT_FOOT]?.y ?? 0, lm[RIGHT_FOOT]?.y ?? 0)
-      const bodyFraction = heelY - noseY  // fraction of frame height the body spans
+      const bodyFraction = heelY - noseY
 
       if (!headOk) {
         goodPoseStartRef.current = null; setHoldPct(0); setPoseOk(false)
@@ -151,7 +207,6 @@ export default function HeightVerificationPage() {
         return
       }
 
-      // Good pose — start hold timer
       setPoseOk(true)
       if (!goodPoseStartRef.current) goodPoseStartRef.current = now
       const held = now - goodPoseStartRef.current
@@ -214,6 +269,8 @@ export default function HeightVerificationPage() {
 
         const idH = Number(sessionStorage.getItem('id_height_inches'))
         if (heightsMatch(bareH, idH, 2)) {
+          sessionStorage.setItem('verified_height_inches', String(idH))
+          setVerifiedHeight(idH)
           setPhase('result_ok')
         } else {
           setPhase('result_mismatch')
@@ -250,6 +307,8 @@ export default function HeightVerificationPage() {
   function retry() {
     setPoseOk(false); setHoldPct(0); goodPoseStartRef.current = null
     setVisualHeightIn(null); setErrorMsg('')
+    setModelFailed(false); setModelReady(false); setCameraReady(false)
+    setLoadingStatus('Starting camera…')
     setPhase('starting')
   }
 
@@ -264,7 +323,10 @@ export default function HeightVerificationPage() {
         <h1 className="text-3xl font-bold text-gray-900">Verified!</h1>
         <p className="text-5xl font-bold text-indigo-600">{inchesToDisplay(verifiedHeight)}</p>
         <p className="text-gray-500">Your height is permanently verified on your account.</p>
-        <button onClick={() => router.push('/profile')} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold text-lg">
+        <button
+          onClick={() => router.push('/profile')}
+          className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-semibold text-lg active:bg-indigo-800 transition-colors"
+        >
           View my profile
         </button>
       </Screen>
@@ -272,14 +334,19 @@ export default function HeightVerificationPage() {
   }
 
   if (phase === 'saving') {
-    return <Screen><Spinner /><p className="text-gray-600 font-medium">Saving verification…</p></Screen>
+    return (
+      <Screen>
+        <Spinner />
+        <p className="text-gray-600 font-medium">Saving verification…</p>
+      </Screen>
+    )
   }
 
   if (phase === 'analyzing') {
     return (
       <Screen>
         <Spinner />
-        <p className="text-gray-600 font-medium">Measuring your height…</p>
+        <p className="text-gray-600 font-medium text-lg">Measuring your height…</p>
         <p className="text-gray-400 text-sm">Comparing ID card proportions to full body</p>
       </Screen>
     )
@@ -292,12 +359,15 @@ export default function HeightVerificationPage() {
         <h1 className="text-2xl font-bold text-gray-900">Height confirmed</h1>
         <div className="bg-green-50 border border-green-200 rounded-2xl p-4 w-full space-y-2 text-sm">
           <Row label="Government ID" value={inchesToDisplay(idHeight)} />
-          <Row label={`Visual measurement${wearingShoes ? ` (−${shoeHeight}" shoes)` : ''}`} value={inchesToDisplay(visualHeightIn)} />
+          <Row label={`Visual${wearingShoes ? ` (−${shoeHeight}″ shoes)` : ''}`} value={inchesToDisplay(visualHeightIn)} />
           <div className="border-t border-green-200 pt-2">
-            <Row label="Match" value={`±${Math.abs(visualHeightIn - idHeight)}" ✓`} green />
+            <Row label="Match" value={`±${Math.abs(visualHeightIn - idHeight)}″ ✓`} green />
           </div>
         </div>
-        <button onClick={saveVerification} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold text-lg">
+        <button
+          onClick={saveVerification}
+          className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-semibold text-lg active:bg-indigo-800 transition-colors"
+        >
           Save verification
         </button>
       </Screen>
@@ -314,11 +384,16 @@ export default function HeightVerificationPage() {
           <Row label="Government ID" value={inchesToDisplay(idHeight)} />
           <Row label="Visual measurement" value={inchesToDisplay(visualHeightIn)} red />
           <div className="border-t border-red-200 pt-2">
-            <Row label="Difference" value={`${Math.abs(visualHeightIn - idHeight)}" off`} red />
+            <Row label="Difference" value={`${Math.abs(visualHeightIn - idHeight)}″ off`} red />
           </div>
         </div>
-        <p className="text-xs text-gray-400 text-center">Ensure the ID card is flat against your chest and you&apos;re 5–6 ft from camera.</p>
-        <button onClick={retry} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold">Try again</button>
+        <p className="text-xs text-gray-400 text-center">Hold the ID flat against your chest and stand 5–6 ft from camera.</p>
+        <button
+          onClick={retry}
+          className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-semibold active:bg-indigo-800 transition-colors"
+        >
+          Try again
+        </button>
       </Screen>
     )
   }
@@ -328,30 +403,38 @@ export default function HeightVerificationPage() {
       <Screen>
         <div className="text-5xl">❌</div>
         <p className="text-gray-700 font-medium text-center">{errorMsg}</p>
-        <button onClick={retry} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold">Try again</button>
+        <button
+          onClick={retry}
+          className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-semibold active:bg-indigo-800 transition-colors"
+        >
+          Try again
+        </button>
       </Screen>
     )
   }
 
   // ─── Live camera UI ───────────────────────────────────────────────────────
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden">
+    <div className="relative w-full bg-black overflow-hidden" style={{ height: '100dvh' }}>
       <video ref={videoRef} playsInline muted autoPlay className="absolute inset-0 w-full h-full object-cover" />
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 px-6 pt-12 pb-4 bg-gradient-to-b from-black/70">
+      <div
+        className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent"
+        style={{ paddingTop: 'max(48px, calc(env(safe-area-inset-top, 0px) + 12px))', paddingBottom: '20px', paddingLeft: '24px', paddingRight: '24px' }}
+      >
         <div className="text-center space-y-1">
           <p className="text-white/60 text-xs uppercase tracking-widest">Step 3 of 3 — Height Check</p>
           <p className={`text-sm font-semibold transition-colors duration-300 ${poseOk ? 'text-green-400' : 'text-white'}`}>
-            {phase === 'starting' ? 'Starting camera…' : feedback}
+            {phase === 'starting' ? loadingStatus : feedback}
           </p>
         </div>
       </div>
 
       {/* Hold-still progress bar */}
-      {(phase === 'positioning' || phase === 'ready') && poseOk && (
-        <div className="absolute top-24 left-8 right-8">
+      {(phase === 'positioning' || phase === 'ready') && poseOk && !!detectorRef.current && (
+        <div className="absolute left-8 right-8" style={{ top: 'max(100px, calc(env(safe-area-inset-top, 0px) + 64px))' }}>
           <div className="h-1 bg-white/20 rounded-full overflow-hidden">
             <div className="h-full bg-green-400 rounded-full transition-all duration-100" style={{ width: `${holdPct}%` }} />
           </div>
@@ -362,7 +445,6 @@ export default function HeightVerificationPage() {
       {(phase === 'ready' || phase === 'countdown') && (
         <div className="absolute inset-0 flex items-start justify-center pointer-events-none" style={{ paddingTop: '38%' }}>
           <div style={{ width: '22vw', aspectRatio: '85.6 / 54' }} className="relative">
-            {/* corners */}
             {['top-0 left-0 border-t-2 border-l-2', 'top-0 right-0 border-t-2 border-r-2',
               'bottom-0 left-0 border-b-2 border-l-2', 'bottom-0 right-0 border-b-2 border-r-2'].map((c, i) => (
               <div key={i} className={`absolute w-4 h-4 border-white rounded ${c}`} />
@@ -373,18 +455,32 @@ export default function HeightVerificationPage() {
       )}
 
       {/* Bottom controls */}
-      <div className="absolute bottom-0 left-0 right-0 px-6 pb-12 bg-gradient-to-t from-black/70">
+      <div
+        className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent"
+        style={{ paddingBottom: 'max(48px, calc(env(safe-area-inset-bottom, 0px) + 20px))', paddingLeft: '24px', paddingRight: '24px', paddingTop: '40px' }}
+      >
         {phase === 'starting' && (
-          <div className="flex justify-center gap-2 items-center">
-            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            <p className="text-white text-sm">Loading…</p>
+          <div className="flex justify-center gap-3 items-center">
+            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            <p className="text-white text-sm">{loadingStatus}</p>
           </div>
         )}
-        {phase === 'positioning' && !poseOk && (
-          <p className="text-white/50 text-sm text-center">Stand with your full body in frame</p>
+        {phase === 'positioning' && !poseOk && !modelFailed && (
+          <p className="text-white/60 text-sm text-center">Stand with your full body in frame</p>
+        )}
+        {phase === 'positioning' && modelFailed && (
+          <button
+            onClick={() => setPhase('countdown')}
+            className="w-full bg-white text-gray-900 py-4 rounded-2xl font-semibold text-lg active:bg-gray-100 transition-colors"
+          >
+            Capture height
+          </button>
         )}
         {phase === 'ready' && (
-          <button onClick={() => setPhase('countdown')} className="w-full bg-white text-gray-900 py-4 rounded-xl font-semibold text-lg">
+          <button
+            onClick={() => setPhase('countdown')}
+            className="w-full bg-white text-gray-900 py-4 rounded-2xl font-semibold text-lg active:bg-gray-100 transition-colors"
+          >
             Capture height
           </button>
         )}
@@ -398,8 +494,11 @@ export default function HeightVerificationPage() {
         )}
       </div>
 
-      <button onClick={() => { stopCamera(); router.push('/verify/id-scan') }}
-        className="absolute top-4 left-4 text-white/70 hover:text-white text-sm z-10">
+      <button
+        onClick={() => { stopCamera(); router.push('/verify/id-scan') }}
+        className="absolute z-10 text-white/70 active:text-white text-sm"
+        style={{ top: 'max(16px, env(safe-area-inset-top, 0px))', left: '16px' }}
+      >
         ← Back
       </button>
     </div>
@@ -424,5 +523,5 @@ function Row({ label, value, green, red }: { label: string; value: string; green
 }
 
 function Spinner() {
-  return <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
+  return <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
 }

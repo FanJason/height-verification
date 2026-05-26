@@ -267,7 +267,7 @@ export default function IDScanPage() {
         </div>
         <button
           onClick={() => router.push('/verify/liveness')}
-          className="w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold text-lg hover:bg-indigo-700 transition-colors"
+          className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-semibold text-lg active:bg-indigo-800 transition-colors"
         >
           Continue to live check
         </button>
@@ -293,7 +293,7 @@ export default function IDScanPage() {
             Must match within 1 inch. Go back and correct your claimed height.
           </p>
         </div>
-        <button onClick={() => router.push('/verify')} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-medium">
+        <button onClick={() => router.push('/verify')} className="w-full border border-gray-300 text-gray-700 py-3 rounded-2xl font-medium active:bg-gray-50 transition-colors">
           Fix claimed height
         </button>
       </ResultScreen>
@@ -304,7 +304,7 @@ export default function IDScanPage() {
     return (
       <ResultScreen icon="🪪" title="Not a valid ID">
         <p className="text-gray-500 text-sm text-center">Use a driver&apos;s license or state ID and make sure the front is facing the camera.</p>
-        <button onClick={retry} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold">Try again</button>
+        <button onClick={retry} className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-semibold active:bg-indigo-800 transition-colors">Try again</button>
       </ResultScreen>
     )
   }
@@ -313,7 +313,7 @@ export default function IDScanPage() {
     return (
       <ResultScreen icon="❌" title="Something went wrong">
         <p className="text-gray-500 text-sm text-center">{errorMsg}</p>
-        <button onClick={retry} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold">Try again</button>
+        <button onClick={retry} className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-semibold active:bg-indigo-800 transition-colors">Try again</button>
       </ResultScreen>
     )
   }
@@ -323,7 +323,7 @@ export default function IDScanPage() {
   const isReady = idReady || phase === 'detected'
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden">
+    <div className="relative w-full bg-black overflow-hidden" style={{ height: '100dvh' }}>
       {/* Live camera feed */}
       <video
         ref={videoRef}
@@ -376,20 +376,24 @@ export default function IDScanPage() {
       </div>
 
       {/* Top header */}
-      <div className="absolute top-0 left-0 right-0 px-6 py-safe-top pt-12 flex items-center gap-4">
+      <div
+        className="absolute top-0 left-0 right-0 flex items-center gap-4 px-6"
+        style={{ paddingTop: 'max(48px, calc(env(safe-area-inset-top, 0px) + 12px))', paddingBottom: '12px' }}
+      >
         <button
           onClick={() => { stopCamera(); router.push('/verify') }}
-          className="text-white/80 hover:text-white transition-colors text-sm font-medium"
+          className="text-white/80 active:text-white transition-colors text-sm font-medium flex-shrink-0"
         >
           ← Back
         </button>
         <div className="flex-1 text-center">
           <p className="text-white/60 text-xs uppercase tracking-widest">Step 2 of 3</p>
         </div>
+        <div className="w-12" /> {/* balance the back button */}
       </div>
 
       {/* Privacy notice */}
-      <div className="absolute top-16 left-0 right-0 px-6">
+      <div className="absolute left-0 right-0 px-6" style={{ top: 'max(100px, calc(env(safe-area-inset-top, 0px) + 64px))' }}>
         <div className="bg-black/50 backdrop-blur-sm rounded-xl px-4 py-2 mx-auto max-w-xs">
           <p className="text-white/80 text-xs text-center">
             🔒 Your ID is <strong>never stored</strong> — processed temporarily to read your height only
@@ -398,7 +402,10 @@ export default function IDScanPage() {
       </div>
 
       {/* Status feedback */}
-      <div className="absolute bottom-0 left-0 right-0 px-6 pb-12">
+      <div
+        className="absolute bottom-0 left-0 right-0 px-6"
+        style={{ paddingBottom: 'max(48px, calc(env(safe-area-inset-bottom, 0px) + 20px))' }}
+      >
         <div className="text-center space-y-3">
           {phase === 'starting' && (
             <div className="flex items-center justify-center gap-2">
@@ -437,8 +444,8 @@ export default function IDScanPage() {
 
 function ResultScreen({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 bg-white">
-      <div className="max-w-sm w-full space-y-6 text-center">
+    <main className="flex flex-col items-center justify-center px-6 bg-white" style={{ minHeight: '100dvh' }}>
+      <div className="max-w-sm w-full space-y-6 text-center py-12">
         <div className="text-5xl">{icon}</div>
         <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
         {children}

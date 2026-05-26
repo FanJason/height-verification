@@ -1,10 +1,105 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-const FEET_OPTIONS = [4, 5, 6, 7]
-const INCH_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+const FEET = [4, 5, 6, 7]
+const INCHES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+const ITEM_H = 60
+
+interface WheelPickerProps {
+  items: number[]
+  initial: number
+  onChange: (v: number) => void
+  formatItem: (v: number) => string
+}
+
+function WheelPicker({ items, initial, onChange, formatItem }: WheelPickerProps) {
+  const ref = useRef<HTMLDivElement>(null)
+  const centerIdxRef = useRef(Math.max(0, items.indexOf(initial)))
+  const [centerIdx, setCenterIdx] = useState(centerIdxRef.current)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const idx = Math.max(0, items.indexOf(initial))
+    requestAnimationFrame(() => {
+      el.scrollTop = idx * ITEM_H
+      centerIdxRef.current = idx
+      setCenterIdx(idx)
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleScroll() {
+    const el = ref.current
+    if (!el) return
+    const idx = Math.round(el.scrollTop / ITEM_H)
+    const clamped = Math.max(0, Math.min(items.length - 1, idx))
+    if (clamped !== centerIdxRef.current) {
+      centerIdxRef.current = clamped
+      setCenterIdx(clamped)
+      onChangeRef.current(items[clamped])
+    }
+  }
+
+  return (
+    <div className="relative flex-1 overflow-hidden" style={{ height: ITEM_H * 5 }}>
+      {/* top fade */}
+      <div
+        className="absolute inset-x-0 top-0 z-10 pointer-events-none"
+        style={{ height: ITEM_H * 2, background: 'linear-gradient(to bottom, white 20%, transparent)' }}
+      />
+      {/* bottom fade */}
+      <div
+        className="absolute inset-x-0 bottom-0 z-10 pointer-events-none"
+        style={{ height: ITEM_H * 2, background: 'linear-gradient(to top, white 20%, transparent)' }}
+      />
+      {/* center selector highlight */}
+      <div
+        className="absolute inset-x-3 z-10 pointer-events-none rounded-2xl bg-gray-100"
+        style={{ top: ITEM_H * 2, height: ITEM_H }}
+      />
+      <div
+        ref={ref}
+        onScroll={handleScroll}
+        className="no-scrollbar overflow-y-scroll h-full"
+        style={{
+          scrollSnapType: 'y mandatory',
+          paddingTop: ITEM_H * 2,
+          paddingBottom: ITEM_H * 2,
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+        }}
+      >
+        {items.map((v, i) => {
+          const dist = Math.abs(i - centerIdx)
+          return (
+            <div
+              key={v}
+              style={{ scrollSnapAlign: 'center', height: ITEM_H }}
+              className="flex items-center justify-center select-none touch-manipulation"
+            >
+              <span
+                style={{
+                  fontSize: dist === 0 ? 34 : dist === 1 ? 24 : 18,
+                  fontWeight: dist === 0 ? 700 : dist === 1 ? 400 : 300,
+                  color: dist === 0 ? '#111827' : dist === 1 ? '#9ca3af' : '#d1d5db',
+                  transition: 'font-size 0.12s ease, color 0.12s ease',
+                  lineHeight: 1,
+                }}
+              >
+                {formatItem(v)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export default function ClaimHeightPage() {
   const router = useRouter()
@@ -19,48 +114,51 @@ export default function ClaimHeightPage() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-6 bg-white">
-      <div className="max-w-sm w-full space-y-8">
-        <div className="text-center space-y-2">
-          <p className="text-sm font-medium text-indigo-600 uppercase tracking-widest">Step 1 of 3</p>
-          <h1 className="text-3xl font-bold text-gray-900">What&#39;s your height?</h1>
-          <p className="text-gray-500">Enter your height exactly as it appears on your ID</p>
+      <div className="w-full max-w-sm space-y-8">
+
+        <div className="text-center space-y-1">
+          <p className="text-xs font-semibold text-indigo-600 uppercase tracking-widest">Step 1 of 3</p>
+          <h1 className="text-3xl font-bold text-gray-900">What&apos;s your height?</h1>
+          <p className="text-gray-400 text-sm">Scroll to your exact height</p>
         </div>
 
-        <div className="flex gap-4 justify-center">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-2 text-center">Feet</label>
-            <select
-              value={feet}
-              onChange={e => setFeet(Number(e.target.value))}
-              className="w-full border border-gray-300 rounded-xl px-4 py-4 text-2xl font-bold text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none bg-white"
-            >
-              {FEET_OPTIONS.map(f => (
-                <option key={f} value={f}>{f}&#39;</option>
-              ))}
-            </select>
+        {/* Wheels */}
+        <div className="flex gap-4 items-start">
+          <div className="flex-1 flex flex-col items-center gap-2">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Feet</p>
+            <div className="w-full">
+              <WheelPicker
+                items={FEET}
+                initial={5}
+                onChange={setFeet}
+                formatItem={(v) => `${v}′`}
+              />
+            </div>
           </div>
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-2 text-center">Inches</label>
-            <select
-              value={inches}
-              onChange={e => setInches(Number(e.target.value))}
-              className="w-full border border-gray-300 rounded-xl px-4 py-4 text-2xl font-bold text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none bg-white"
-            >
-              {INCH_OPTIONS.map(i => (
-                <option key={i} value={i}>{i}&quot;</option>
-              ))}
-            </select>
+          <div className="flex-1 flex flex-col items-center gap-2">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Inches</p>
+            <div className="w-full">
+              <WheelPicker
+                items={INCHES}
+                initial={10}
+                onChange={setInches}
+                formatItem={(v) => `${v}″`}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="bg-gray-50 rounded-2xl p-4 text-center">
-          <p className="text-5xl font-bold text-gray-900">{feet}&#39;{inches}&quot;</p>
-          <p className="text-sm text-gray-400 mt-1">{feet * 12 + inches} inches total</p>
+        {/* Selected height display */}
+        <div className="text-center py-2">
+          <p className="text-6xl font-bold text-gray-900 tracking-tight">
+            {feet}&apos;{inches}&quot;
+          </p>
+          <p className="text-sm text-gray-400 mt-2">{feet * 12 + inches} inches total</p>
         </div>
 
         <button
           onClick={handleContinue}
-          className="w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold text-lg hover:bg-indigo-700 transition-colors"
+          className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-semibold text-lg active:bg-indigo-800 transition-colors"
         >
           Continue
         </button>
