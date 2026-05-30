@@ -46,7 +46,6 @@ export default async function ProfilePage() {
             </div>
           )}
           <p className="text-lg font-semibold text-gray-900">{displayName}</p>
-          <p className="text-gray-400 text-sm">{user.email}</p>
         </div>
 
         {verification ? (
@@ -76,6 +75,12 @@ export default async function ProfilePage() {
                 <span className="font-medium text-gray-700">To the inch</span>
               </div>
             </div>
+
+            <p className="text-center text-xs text-gray-300">
+              <Link href="/verify" className="hover:text-gray-400 transition-colors">
+                Re-verify height
+              </Link>
+            </p>
           </div>
         ) : (
           <div className="text-center space-y-4">
