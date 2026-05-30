@@ -14,7 +14,7 @@ type Phase =
   | 'done'
   | 'error'
 
-const READY_HOLD_MS = 1500
+const READY_HOLD_MS = 4000
 const MANUAL_FALLBACK_MS = 15000
 const NOSE = 0
 const LEFT_HEEL = 29, RIGHT_HEEL = 30
@@ -218,7 +218,38 @@ export default function HeightVerificationPage() {
         })
       }
 
-      // Step 3 is a soft check — just need a single person confidently detected
+      // Full body must be visible: head + at least one heel/foot + body spanning ≥50% of frame
+      const headVis2 = lm[NOSE]?.visibility ?? 0
+      const lHeelVis2 = lm[LEFT_HEEL]?.visibility ?? 0
+      const rHeelVis2 = lm[RIGHT_HEEL]?.visibility ?? 0
+      const lFootVis2 = lm[LEFT_FOOT]?.visibility ?? 0
+      const rFootVis2 = lm[RIGHT_FOOT]?.visibility ?? 0
+      const noseY2 = lm[NOSE]?.y ?? 0.5
+      const heelY2 = Math.max(
+        lHeelVis2 > 0.1 ? lm[LEFT_HEEL].y : 0,
+        rHeelVis2 > 0.1 ? lm[RIGHT_HEEL].y : 0,
+        lFootVis2 > 0.1 ? lm[LEFT_FOOT].y : 0,
+        rFootVis2 > 0.1 ? lm[RIGHT_FOOT].y : 0,
+      )
+      const bodyFraction2 = heelY2 - noseY2
+
+      if (headVis2 < VIS_HEAD) {
+        goodPoseStartRef.current = null; setHoldPct(0); setPoseOk(false)
+        setFeedback('Step back — top of your head must be visible')
+        return
+      }
+      const feetOk = lHeelVis2 > VIS_FEET || rHeelVis2 > VIS_FEET ||
+                     lFootVis2 > VIS_FEET || rFootVis2 > VIS_FEET
+      if (!feetOk) {
+        goodPoseStartRef.current = null; setHoldPct(0); setPoseOk(false)
+        setFeedback('Step back until your feet are visible')
+        return
+      }
+      if (bodyFraction2 < 0.5) {
+        goodPoseStartRef.current = null; setHoldPct(0); setPoseOk(false)
+        setFeedback('Step back further so your full body fits in frame')
+        return
+      }
 
       setPoseOk(true)
       if (!goodPoseStartRef.current) goodPoseStartRef.current = now
