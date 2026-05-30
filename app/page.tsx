@@ -42,6 +42,11 @@ export default async function Home() {
             <Link href="/profile" className="block w-full bg-gray-900 text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition-colors">
               View profile
             </Link>
+            <p className="text-center text-xs text-gray-300">
+              <Link href="/verify" className="hover:text-gray-400 transition-colors">
+                Re-verify height
+              </Link>
+            </p>
           </div>
         ) : user ? (
           <Link href="/verify" className="block w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold text-lg hover:bg-indigo-700 transition-colors">
