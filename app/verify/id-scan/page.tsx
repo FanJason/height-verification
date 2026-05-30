@@ -474,7 +474,7 @@ function ResultScreen({ icon, title, children }: { icon: React.ReactNode; title:
   return (
     <main className="flex flex-col items-center justify-center px-6 bg-white" style={{ minHeight: '100dvh' }}>
       <div className="max-w-sm w-full space-y-6 text-center py-12">
-        <div className="text-5xl">{icon}</div>
+        <div className="flex justify-center text-5xl">{icon}</div>
         <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
         {children}
       </div>
