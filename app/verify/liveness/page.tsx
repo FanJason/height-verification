@@ -39,8 +39,6 @@ export default function HeightVerificationPage() {
   const [countdown, setCountdown] = useState(COUNTDOWN_SEC)
   const [holdPct, setHoldPct] = useState(0)
   const [visualHeightIn, setVisualHeightIn] = useState<number | null>(null)
-  const [wearingShoes, setWearingShoes] = useState(false)
-  const [shoeHeight, setShoeHeight] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
   const [idHeight, setIdHeight] = useState(0)
   const [verifiedHeight, setVerifiedHeight] = useState(0)
@@ -120,7 +118,7 @@ export default function HeightVerificationPage() {
             delegate: 'GPU',
           },
           runningMode: 'VIDEO',
-          numPoses: 1,
+          numPoses: 3,
         })
         if (cancelled) return
         detectorRef.current = detector
@@ -173,6 +171,15 @@ export default function HeightVerificationPage() {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = (detectorRef.current as any).detectForVideo(videoRef.current, now)
+
+      if (result?.landmarks?.length > 1) {
+        setPoseOk(false)
+        goodPoseStartRef.current = null
+        setHoldPct(0)
+        setFeedback('Only one person should be in frame')
+        return
+      }
+
       const lm = result?.landmarks?.[0]
 
       if (!lm) {
@@ -250,25 +257,33 @@ export default function HeightVerificationPage() {
         const res = await fetch('/api/verify-height-visual', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: frame, shoeHeightInches: 0 }),
+          body: JSON.stringify({ imageBase64: frame }),
         })
         const data = await res.json()
 
+        if (!data.singlePerson) {
+          setErrorMsg('Only one person should be in frame. Please try again alone.')
+          setPhase('error')
+          return
+        }
+        if (!data.cameraParallel) {
+          setErrorMsg('Stand facing the camera straight on — not at an angle.')
+          setPhase('error')
+          return
+        }
         if (!data.fullBodyVisible || !data.cardVisible) {
           setErrorMsg(data.feedback || 'Could not detect your full body and ID card clearly. Please try again.')
           setPhase('error')
           return
         }
 
-        const bareH = data.bareHeightInches ?? data.estimatedHeightInches
-        if (!bareH) { setErrorMsg('Could not estimate height from the image.'); setPhase('error'); return }
+        const estimatedH = data.estimatedHeightInches
+        if (!estimatedH) { setErrorMsg('Could not estimate height from the image.'); setPhase('error'); return }
 
-        setVisualHeightIn(bareH)
-        setWearingShoes(data.wearingShoes ?? false)
-        setShoeHeight(data.estimatedShoeHeightInches ?? 0)
+        setVisualHeightIn(estimatedH)
 
         const idH = Number(sessionStorage.getItem('id_height_inches'))
-        if (heightsMatch(bareH, idH, 2)) {
+        if (heightsMatch(estimatedH, idH, 3)) {
           sessionStorage.setItem('verified_height_inches', String(idH))
           setVerifiedHeight(idH)
           setPhase('result_ok')
@@ -359,7 +374,7 @@ export default function HeightVerificationPage() {
         <h1 className="text-2xl font-bold text-gray-900">Height confirmed</h1>
         <div className="bg-green-50 border border-green-200 rounded-2xl p-4 w-full space-y-2 text-sm">
           <Row label="Government ID" value={inchesToDisplay(idHeight)} />
-          <Row label={`Visual${wearingShoes ? ` (−${shoeHeight}″ shoes)` : ''}`} value={inchesToDisplay(visualHeightIn)} />
+          <Row label="Visual" value={inchesToDisplay(visualHeightIn)} />
           <div className="border-t border-green-200 pt-2">
             <Row label="Match" value={`±${Math.abs(visualHeightIn - idHeight)}″ ✓`} green />
           </div>
@@ -379,7 +394,7 @@ export default function HeightVerificationPage() {
       <Screen>
         <div className="text-5xl">⚠️</div>
         <h1 className="text-2xl font-bold text-gray-900">Height mismatch</h1>
-        <p className="text-gray-500 text-sm text-center">Visual measurement is more than 2 inches from your ID height.</p>
+        <p className="text-gray-500 text-sm text-center">Visual measurement is more than 3 inches from your ID height.</p>
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4 w-full space-y-2 text-sm">
           <Row label="Government ID" value={inchesToDisplay(idHeight)} />
           <Row label="Visual measurement" value={inchesToDisplay(visualHeightIn)} red />
