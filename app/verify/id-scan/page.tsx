@@ -37,6 +37,7 @@ export default function IDScanPage() {
   const [claimed, setClaimed] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
   const [showManualButton, setShowManualButton] = useState(false)
+  const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment')
   const scanStartRef = useRef<number>(0)
 
   useEffect(() => {
@@ -226,7 +227,7 @@ export default function IDScanPage() {
     // Restart camera if it was stopped
     if (!streamRef.current?.active) {
       navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: { facingMode: cameraFacing, width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
       }).then(stream => {
         streamRef.current = stream
@@ -236,6 +237,26 @@ export default function IDScanPage() {
         }
       })
     }
+  }
+
+  function flipCamera() {
+    if (phase !== 'scanning' && phase !== 'detected') return
+    const newFacing = cameraFacing === 'environment' ? 'user' : 'environment'
+    setCameraFacing(newFacing)
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    consecutiveGoodRef.current = 0
+    setIdReady(false)
+    setHoldProgress(0)
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: newFacing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false,
+    }).then(stream => {
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        videoRef.current.play()
+      }
+    })
   }
 
   // ─── Result screens ───────────────────────────────────────────────────────
@@ -388,8 +409,15 @@ export default function IDScanPage() {
         </button>
         <div className="flex-1 text-center">
           <p className="text-white/60 text-xs uppercase tracking-widest">Step 2 of 3</p>
+          <p className="text-white font-semibold text-sm mt-0.5">Scan the front of your photo ID</p>
         </div>
-        <div className="w-12" /> {/* balance the back button */}
+        <button
+          onClick={flipCamera}
+          className="text-white/80 active:text-white transition-colors flex-shrink-0 w-12 flex justify-end"
+          aria-label="Flip camera"
+        >
+          <FlipCameraIcon />
+        </button>
       </div>
 
       {/* Privacy notice */}
@@ -457,5 +485,15 @@ function ResultScreen({ icon, title, children }: { icon: React.ReactNode; title:
 function Spinner({ white }: { white?: boolean }) {
   return (
     <div className={`w-5 h-5 border-2 rounded-full animate-spin ${white ? 'border-white border-t-transparent' : 'border-gray-400 border-t-transparent'}`} />
+  )
+}
+
+function FlipCameraIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 7h-3a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+      <circle cx="12" cy="13" r="3"/>
+      <path d="M9.5 3L7 5.5 9.5 8M14.5 3L17 5.5 14.5 8"/>
+    </svg>
   )
 }

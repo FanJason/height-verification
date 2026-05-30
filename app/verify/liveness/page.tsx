@@ -43,6 +43,7 @@ export default function HeightVerificationPage() {
   const [modelReady, setModelReady] = useState(false)
   const [modelFailed, setModelFailed] = useState(false)
   const [loadingStatus, setLoadingStatus] = useState('Starting camera…')
+  const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment')
 
   useEffect(() => {
     setIdHeight(Number(sessionStorage.getItem('id_height_inches') || 0))
@@ -304,6 +305,26 @@ export default function HeightVerificationPage() {
     setPhase('starting')
   }
 
+  function flipCamera() {
+    if (phase !== 'positioning') return
+    const newFacing = cameraFacing === 'environment' ? 'user' : 'environment'
+    setCameraFacing(newFacing)
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    goodPoseStartRef.current = null
+    setPoseOk(false)
+    setHoldPct(0)
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: newFacing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    }).then(stream => {
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        videoRef.current.play()
+      }
+    })
+  }
+
   // ─── Non-camera screens ───────────────────────────────────────────────────
 
   if (phase === 'done') {
@@ -416,17 +437,33 @@ export default function HeightVerificationPage() {
         className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent"
         style={{ paddingTop: 'max(48px, calc(env(safe-area-inset-top, 0px) + 12px))', paddingBottom: '20px', paddingLeft: '24px', paddingRight: '24px' }}
       >
-        <div className="text-center space-y-1">
-          <p className="text-white/60 text-xs uppercase tracking-widest">Step 3 of 3 — Height Check</p>
-          <p className={`text-sm font-semibold transition-colors duration-300 ${poseOk ? 'text-green-400' : 'text-white'}`}>
-            {phase === 'starting' ? loadingStatus : feedback}
-          </p>
+        <div className="flex items-start gap-4">
+          <button
+            onClick={() => { stopCamera(); router.push('/verify/id-scan') }}
+            className="text-white/80 active:text-white transition-colors text-sm font-medium flex-shrink-0 mt-0.5"
+          >
+            ← Back
+          </button>
+          <div className="flex-1 text-center space-y-0.5">
+            <p className="text-white/60 text-xs uppercase tracking-widest">Step 3 of 3</p>
+            <p className="text-white font-semibold text-sm">Stand straight for your height check</p>
+            <p className={`text-xs transition-colors duration-300 ${poseOk ? 'text-green-400' : 'text-white/70'}`}>
+              {phase === 'starting' ? loadingStatus : feedback}
+            </p>
+          </div>
+          <button
+            onClick={flipCamera}
+            className="text-white/80 active:text-white transition-colors flex-shrink-0 w-12 flex justify-end mt-0.5"
+            aria-label="Flip camera"
+          >
+            <FlipCameraIcon />
+          </button>
         </div>
       </div>
 
       {/* Auto-capture progress bar */}
       {phase === 'positioning' && poseOk && !!detectorRef.current && (
-        <div className="absolute left-8 right-8" style={{ top: 'max(100px, calc(env(safe-area-inset-top, 0px) + 64px))' }}>
+        <div className="absolute left-8 right-8" style={{ top: 'max(140px, calc(env(safe-area-inset-top, 0px) + 100px))' }}>
           <div className="h-1 bg-white/20 rounded-full overflow-hidden">
             <div className="h-full bg-green-400 rounded-full transition-all duration-100" style={{ width: `${holdPct}%` }} />
           </div>
@@ -457,13 +494,6 @@ export default function HeightVerificationPage() {
         )}
       </div>
 
-      <button
-        onClick={() => { stopCamera(); router.push('/verify/id-scan') }}
-        className="absolute z-10 text-white/70 active:text-white text-sm"
-        style={{ top: 'max(16px, env(safe-area-inset-top, 0px))', left: '16px' }}
-      >
-        ← Back
-      </button>
     </div>
   )
 }
@@ -487,4 +517,14 @@ function Row({ label, value, green, red }: { label: string; value: string; green
 
 function Spinner() {
   return <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
+}
+
+function FlipCameraIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 7h-3a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+      <circle cx="12" cy="13" r="3"/>
+      <path d="M9.5 3L7 5.5 9.5 8M14.5 3L17 5.5 14.5 8"/>
+    </svg>
+  )
 }
