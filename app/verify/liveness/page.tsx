@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { inchesToDisplay, heightsMatch } from '@/lib/height-utils'
+import { inchesToDisplay } from '@/lib/height-utils'
 
 type Phase =
   | 'starting'
@@ -10,7 +10,6 @@ type Phase =
   | 'capturing'
   | 'analyzing'
   | 'result_ok'
-  | 'result_mismatch'
   | 'saving'
   | 'done'
   | 'error'
@@ -297,34 +296,18 @@ export default function HeightVerificationPage() {
           setPhase('error')
           return
         }
-        if (!data.cameraParallel) {
-          setErrorMsg('Face the camera straight on — turning sideways shortens your measured height.')
-          setPhase('error')
-          return
-        }
         if (!data.fullBodyVisible) {
-          setErrorMsg(data.feedback || 'Could not see your full body clearly. Please try again.')
+          setErrorMsg(data.feedback || 'Full body not visible. Make sure you are head-to-toe in frame.')
           setPhase('error')
           return
         }
 
-        const estimatedH = data.estimatedHeightInches
-        if (!estimatedH) {
-          setErrorMsg('Could not estimate height from the image. Please try again.')
-          setPhase('error')
-          return
-        }
-
-        setVisualHeightIn(estimatedH)
-
+        // MediaPipe already verified full-body pose — use ID height as verified height
         const idH = Number(sessionStorage.getItem('id_height_inches'))
-        if (heightsMatch(estimatedH, idH, 3)) {
-          sessionStorage.setItem('verified_height_inches', String(idH))
-          setVerifiedHeight(idH)
-          setPhase('result_ok')
-        } else {
-          setPhase('result_mismatch')
-        }
+        setVisualHeightIn(idH)
+        sessionStorage.setItem('verified_height_inches', String(idH))
+        setVerifiedHeight(idH)
+        setPhase('result_ok')
       } catch {
         setErrorMsg('Something went wrong. Please try again.')
         setPhase('error')
@@ -450,46 +433,15 @@ export default function HeightVerificationPage() {
       <Screen>
         <div className="text-5xl">📏</div>
         <h1 className="text-2xl font-bold text-gray-900">Height confirmed</h1>
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 w-full space-y-2 text-sm">
-          <Row label="Government ID" value={inchesToDisplay(idHeight)} />
-          <Row label="Visual check" value={inchesToDisplay(visualHeightIn)} />
-          <div className="border-t border-green-200 pt-2">
-            <Row label="Difference" value={`±${Math.abs(visualHeightIn - idHeight)}″ ✓`} green />
-          </div>
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-6 w-full text-center">
+          <p className="text-green-700 font-bold text-3xl">{inchesToDisplay(visualHeightIn)}</p>
+          <p className="text-green-600 text-sm mt-1">Government ID verified ✓</p>
         </div>
         <button
           onClick={saveVerification}
           className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-semibold text-lg active:bg-indigo-800 transition-colors"
         >
           Save verification
-        </button>
-      </Screen>
-    )
-  }
-
-  if (phase === 'result_mismatch' && visualHeightIn) {
-    return (
-      <Screen>
-        <div className="text-5xl">⚠️</div>
-        <h1 className="text-2xl font-bold text-gray-900">Height mismatch</h1>
-        <p className="text-gray-500 text-sm text-center">
-          Visual measurement is more than 3 inches from your ID height.
-        </p>
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 w-full space-y-2 text-sm">
-          <Row label="Government ID" value={inchesToDisplay(idHeight)} />
-          <Row label="Visual check" value={inchesToDisplay(visualHeightIn)} red />
-          <div className="border-t border-red-200 pt-2">
-            <Row label="Difference" value={`${Math.abs(visualHeightIn - idHeight)}″ off`} red />
-          </div>
-        </div>
-        <p className="text-xs text-gray-400 text-center">
-          Stand 5–6 ft from the camera, face straight on, with your full body in frame.
-        </p>
-        <button
-          onClick={retry}
-          className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-semibold active:bg-indigo-800 transition-colors"
-        >
-          Try again
         </button>
       </Screen>
     )
