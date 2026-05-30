@@ -7,8 +7,6 @@ import { inchesToDisplay, heightsMatch } from '@/lib/height-utils'
 type Phase =
   | 'starting'
   | 'positioning'
-  | 'ready'
-  | 'countdown'
   | 'capturing'
   | 'analyzing'
   | 'result_ok'
@@ -17,7 +15,6 @@ type Phase =
   | 'done'
   | 'error'
 
-const COUNTDOWN_SEC = 3
 const READY_HOLD_MS = 1500
 const NOSE = 0
 const LEFT_HEEL = 29, RIGHT_HEEL = 30
@@ -36,14 +33,12 @@ export default function HeightVerificationPage() {
   const [phase, setPhase] = useState<Phase>('starting')
   const [feedback, setFeedback] = useState('Starting camera…')
   const [poseOk, setPoseOk] = useState(false)
-  const [countdown, setCountdown] = useState(COUNTDOWN_SEC)
   const [holdPct, setHoldPct] = useState(0)
   const [visualHeightIn, setVisualHeightIn] = useState<number | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [idHeight, setIdHeight] = useState(0)
   const [verifiedHeight, setVerifiedHeight] = useState(0)
 
-  // Separate loading state so camera shows before MediaPipe is ready
   const [cameraReady, setCameraReady] = useState(false)
   const [modelReady, setModelReady] = useState(false)
   const [modelFailed, setModelFailed] = useState(false)
@@ -149,17 +144,12 @@ export default function HeightVerificationPage() {
     }
   }, [cameraReady, modelReady, modelFailed, phase])
 
-  // Pose detection loop
+  // Pose detection loop — auto-captures once pose is held long enough
   useEffect(() => {
-    if (phase !== 'positioning' && phase !== 'ready') return
+    if (phase !== 'positioning') return
 
-    // No MediaPipe — allow manual capture immediately
-    if (!detectorRef.current) {
-      setPoseOk(true)
-      setPhase('ready')
-      setFeedback('Hold your ID card flat against your chest')
-      return
-    }
+    // No MediaPipe — wait for manual tap
+    if (!detectorRef.current) return
 
     let lastTs = -1
 
@@ -219,28 +209,15 @@ export default function HeightVerificationPage() {
       const held = now - goodPoseStartRef.current
       const pct = Math.min((held / READY_HOLD_MS) * 100, 100)
       setHoldPct(pct)
-      setFeedback('Hold your ID card flat against your chest — hold still')
+      setFeedback('Hold still…')
 
-      if (held >= READY_HOLD_MS && phase === 'positioning') {
-        setPhase('ready')
+      if (held >= READY_HOLD_MS) {
+        setPhase('capturing')
       }
     }
 
     rafRef.current = requestAnimationFrame(detect)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [phase])
-
-  // Countdown
-  useEffect(() => {
-    if (phase !== 'countdown') return
-    setCountdown(COUNTDOWN_SEC)
-    const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) { clearInterval(interval); setPhase('capturing'); return 0 }
-        return prev - 1
-      })
-    }, 1000)
-    return () => clearInterval(interval)
   }, [phase])
 
   // Capture + analyze
@@ -271,8 +248,8 @@ export default function HeightVerificationPage() {
           setPhase('error')
           return
         }
-        if (!data.fullBodyVisible || !data.cardVisible) {
-          setErrorMsg(data.feedback || 'Could not detect your full body and ID card clearly. Please try again.')
+        if (!data.fullBodyVisible) {
+          setErrorMsg(data.feedback || 'Could not see your full body clearly. Please try again.')
           setPhase('error')
           return
         }
@@ -362,7 +339,7 @@ export default function HeightVerificationPage() {
       <Screen>
         <Spinner />
         <p className="text-gray-600 font-medium text-lg">Measuring your height…</p>
-        <p className="text-gray-400 text-sm">Comparing ID card proportions to full body</p>
+        <p className="text-gray-400 text-sm">Analyzing body proportions</p>
       </Screen>
     )
   }
@@ -402,7 +379,7 @@ export default function HeightVerificationPage() {
             <Row label="Difference" value={`${Math.abs(visualHeightIn - idHeight)}″ off`} red />
           </div>
         </div>
-        <p className="text-xs text-gray-400 text-center">Hold the ID flat against your chest and stand 5–6 ft from camera.</p>
+        <p className="text-xs text-gray-400 text-center">Stand 5–6 ft from the camera with your full body in frame.</p>
         <button
           onClick={retry}
           className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-semibold active:bg-indigo-800 transition-colors"
@@ -447,24 +424,11 @@ export default function HeightVerificationPage() {
         </div>
       </div>
 
-      {/* Hold-still progress bar */}
-      {(phase === 'positioning' || phase === 'ready') && poseOk && !!detectorRef.current && (
+      {/* Auto-capture progress bar */}
+      {phase === 'positioning' && poseOk && !!detectorRef.current && (
         <div className="absolute left-8 right-8" style={{ top: 'max(100px, calc(env(safe-area-inset-top, 0px) + 64px))' }}>
           <div className="h-1 bg-white/20 rounded-full overflow-hidden">
             <div className="h-full bg-green-400 rounded-full transition-all duration-100" style={{ width: `${holdPct}%` }} />
-          </div>
-        </div>
-      )}
-
-      {/* Card guide — chest area */}
-      {(phase === 'ready' || phase === 'countdown') && (
-        <div className="absolute inset-0 flex items-start justify-center pointer-events-none" style={{ paddingTop: '38%' }}>
-          <div style={{ width: '22vw', aspectRatio: '85.6 / 54' }} className="relative">
-            {['top-0 left-0 border-t-2 border-l-2', 'top-0 right-0 border-t-2 border-r-2',
-              'bottom-0 left-0 border-b-2 border-l-2', 'bottom-0 right-0 border-b-2 border-r-2'].map((c, i) => (
-              <div key={i} className={`absolute w-4 h-4 border-white rounded ${c}`} />
-            ))}
-            <p className="absolute -top-5 left-1/2 -translate-x-1/2 text-white/70 text-xs whitespace-nowrap">ID card here</p>
           </div>
         </div>
       )}
@@ -485,27 +449,11 @@ export default function HeightVerificationPage() {
         )}
         {phase === 'positioning' && modelFailed && (
           <button
-            onClick={() => setPhase('countdown')}
+            onClick={() => setPhase('capturing')}
             className="w-full bg-white text-gray-900 py-4 rounded-2xl font-semibold text-lg active:bg-gray-100 transition-colors"
           >
-            Capture height
+            Capture
           </button>
-        )}
-        {phase === 'ready' && (
-          <button
-            onClick={() => setPhase('countdown')}
-            className="w-full bg-white text-gray-900 py-4 rounded-2xl font-semibold text-lg active:bg-gray-100 transition-colors"
-          >
-            Capture height
-          </button>
-        )}
-        {phase === 'countdown' && (
-          <div className="text-center space-y-3">
-            <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center mx-auto">
-              <span className="text-white text-3xl font-bold">{countdown}</span>
-            </div>
-            <p className="text-white font-medium">Hold still — ID flat against chest</p>
-          </div>
         )}
       </div>
 
