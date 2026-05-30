@@ -218,7 +218,7 @@ export default function HeightVerificationPage() {
         })
       }
 
-      // Full body must be visible: head + at least one heel/foot + body spanning ≥50% of frame
+      // Full body must be visible: head + BOTH feet + body spanning ≥50% of frame
       const headVis2 = lm[NOSE]?.visibility ?? 0
       const lHeelVis2 = lm[LEFT_HEEL]?.visibility ?? 0
       const rHeelVis2 = lm[RIGHT_HEEL]?.visibility ?? 0
@@ -238,11 +238,11 @@ export default function HeightVerificationPage() {
         setFeedback('Step back — top of your head must be visible')
         return
       }
-      const feetOk = lHeelVis2 > VIS_FEET || rHeelVis2 > VIS_FEET ||
-                     lFootVis2 > VIS_FEET || rFootVis2 > VIS_FEET
-      if (!feetOk) {
+      const leftFootOk  = lHeelVis2 > VIS_FEET || lFootVis2 > VIS_FEET
+      const rightFootOk = rHeelVis2 > VIS_FEET || rFootVis2 > VIS_FEET
+      if (!leftFootOk || !rightFootOk) {
         goodPoseStartRef.current = null; setHoldPct(0); setPoseOk(false)
-        setFeedback('Step back until your feet are visible')
+        setFeedback('Step back until both feet are fully visible')
         return
       }
       if (bodyFraction2 < 0.5) {
