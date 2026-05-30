@@ -10,24 +10,32 @@ export async function POST(req: NextRequest) {
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
-      max_tokens: 150,
+      max_tokens: 300,
       messages: [
         {
           role: 'user',
           content: [
             {
               type: 'text',
-              text: `Look at this photo and answer two questions. Respond with ONLY valid JSON — no markdown, no explanation.
+              text: `Analyze this full-body photo. Respond with ONLY valid JSON — no markdown, no explanation.
 
 {
   "singlePerson": boolean,
   "fullBodyVisible": boolean,
+  "cameraParallel": boolean,
+  "estimatedHeightInches": number | null,
   "feedback": string
 }
 
-singlePerson: true if exactly one person is visible in the frame
-fullBodyVisible: true if the person's body is roughly visible from head to around their feet — be lenient, partial feet or slightly cropped is fine
-feedback: one short instruction if either check failed, otherwise empty string`,
+singlePerson: true if exactly one person is in the frame
+fullBodyVisible: true if the complete body is visible from crown of head to feet
+cameraParallel: true if the person is facing the camera straight on (not turned at an angle that would foreshorten height)
+estimatedHeightInches: estimate height in inches using body proportion analysis:
+  - Head-to-body ratio (average head ≈ 1/7.5 of total height)
+  - Cross-check with leg length (~47% of height) and torso
+  - Round to nearest whole inch
+  - Only set if singlePerson, fullBodyVisible, and cameraParallel are all true; otherwise null
+feedback: one short instruction for the first failed condition, or empty string if all pass`,
             },
             {
               type: 'image_url',
