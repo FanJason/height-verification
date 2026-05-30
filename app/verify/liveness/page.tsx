@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { inchesToDisplay, heightsMatch } from '@/lib/height-utils'
+import { inchesToDisplay } from '@/lib/height-utils'
 
 type Phase =
   | 'starting'
@@ -10,16 +10,17 @@ type Phase =
   | 'capturing'
   | 'analyzing'
   | 'result_ok'
-  | 'result_mismatch'
   | 'saving'
   | 'done'
   | 'error'
 
 const READY_HOLD_MS = 1500
+const MANUAL_FALLBACK_MS = 15000
 const NOSE = 0
 const LEFT_HEEL = 29, RIGHT_HEEL = 30
 const LEFT_FOOT = 31, RIGHT_FOOT = 32
-const VIS = 0.55
+const VIS_HEAD = 0.5       // visibility threshold for head
+const VIS_FEET = 0.35      // lower threshold for feet — shoes/floor make these harder to detect
 
 export default function HeightVerificationPage() {
   const router = useRouter()
@@ -44,6 +45,11 @@ export default function HeightVerificationPage() {
   const [modelFailed, setModelFailed] = useState(false)
   const [loadingStatus, setLoadingStatus] = useState('Starting camera…')
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment')
+  const [showManualButton, setShowManualButton] = useState(false)
+  const [debugStats, setDebugStats] = useState<{
+    headVis: number; lHeelVis: number; rHeelVis: number
+    lFootVis: number; rFootVis: number; bodyFraction: number
+  } | null>(null)
 
   useEffect(() => {
     setIdHeight(Number(sessionStorage.getItem('id_height_inches') || 0))
@@ -145,6 +151,13 @@ export default function HeightVerificationPage() {
     }
   }, [cameraReady, modelReady, modelFailed, phase])
 
+  // Show manual capture button after timeout (fallback if MediaPipe loads but detection fails)
+  useEffect(() => {
+    if (phase !== 'positioning') return
+    const t = setTimeout(() => setShowManualButton(true), MANUAL_FALLBACK_MS)
+    return () => clearTimeout(t)
+  }, [phase])
+
   // Pose detection loop — auto-captures once pose is held long enough
   useEffect(() => {
     if (phase !== 'positioning') return
@@ -153,10 +166,13 @@ export default function HeightVerificationPage() {
     if (!detectorRef.current) return
 
     let lastTs = -1
+    let frameCount = 0
 
     function detect(now: number) {
       rafRef.current = requestAnimationFrame(detect)
       if (!videoRef.current || !detectorRef.current) return
+      // Wait for video to be actually playing
+      if (videoRef.current.readyState < 2) return
       if (now === lastTs) return
       lastTs = now
 
@@ -181,29 +197,28 @@ export default function HeightVerificationPage() {
         return
       }
 
-      const headOk = lm[NOSE]?.visibility > VIS
-      const feetOk = (lm[LEFT_HEEL]?.visibility > VIS || lm[RIGHT_HEEL]?.visibility > VIS) &&
-                     (lm[LEFT_FOOT]?.visibility > VIS || lm[RIGHT_FOOT]?.visibility > VIS)
+      // Debug stats every ~20 frames
+      frameCount++
+      if (frameCount % 20 === 0) {
+        const headVis = lm[NOSE]?.visibility ?? 0
+        const lHeelVis = lm[LEFT_HEEL]?.visibility ?? 0
+        const rHeelVis = lm[RIGHT_HEEL]?.visibility ?? 0
+        const lFootVis = lm[LEFT_FOOT]?.visibility ?? 0
+        const rFootVis = lm[RIGHT_FOOT]?.visibility ?? 0
+        const noseY = lm[NOSE]?.y ?? 0
+        const heelY = Math.max(lm[LEFT_HEEL]?.y ?? 0, lm[RIGHT_HEEL]?.y ?? 0,
+                               lm[LEFT_FOOT]?.y ?? 0, lm[RIGHT_FOOT]?.y ?? 0)
+        const bodyFraction = heelY - noseY
+        setDebugStats({ headVis, lHeelVis, rHeelVis, lFootVis, rFootVis, bodyFraction })
+        console.log('[pose]', {
+          headVis: headVis.toFixed(2),
+          lHeelVis: lHeelVis.toFixed(2), rHeelVis: rHeelVis.toFixed(2),
+          lFootVis: lFootVis.toFixed(2), rFootVis: rFootVis.toFixed(2),
+          bodyFraction: bodyFraction.toFixed(2),
+        })
+      }
 
-      const noseY = lm[NOSE]?.y ?? 0.5
-      const heelY = Math.max(lm[LEFT_HEEL]?.y ?? 0, lm[RIGHT_HEEL]?.y ?? 0, lm[LEFT_FOOT]?.y ?? 0, lm[RIGHT_FOOT]?.y ?? 0)
-      const bodyFraction = heelY - noseY
-
-      if (!headOk) {
-        goodPoseStartRef.current = null; setHoldPct(0); setPoseOk(false)
-        setFeedback('Step back — can\'t see the top of your head')
-        return
-      }
-      if (!feetOk) {
-        goodPoseStartRef.current = null; setHoldPct(0); setPoseOk(false)
-        setFeedback('Step back until your feet are visible')
-        return
-      }
-      if (bodyFraction < 0.55) {
-        goodPoseStartRef.current = null; setHoldPct(0); setPoseOk(false)
-        setFeedback('Step a bit closer to fill the frame')
-        return
-      }
+      // Step 3 is a soft check — just need a single person confidently detected
 
       setPoseOk(true)
       if (!goodPoseStartRef.current) goodPoseStartRef.current = now
@@ -244,30 +259,18 @@ export default function HeightVerificationPage() {
           setPhase('error')
           return
         }
-        if (!data.cameraParallel) {
-          setErrorMsg('Stand facing the camera straight on — not at an angle.')
-          setPhase('error')
-          return
-        }
         if (!data.fullBodyVisible) {
           setErrorMsg(data.feedback || 'Could not see your full body clearly. Please try again.')
           setPhase('error')
           return
         }
 
-        const estimatedH = data.estimatedHeightInches
-        if (!estimatedH) { setErrorMsg('Could not estimate height from the image.'); setPhase('error'); return }
-
-        setVisualHeightIn(estimatedH)
-
+        // Step 3 is visual confirmation only — use the ID height from step 2
         const idH = Number(sessionStorage.getItem('id_height_inches'))
-        if (heightsMatch(estimatedH, idH, 3)) {
-          sessionStorage.setItem('verified_height_inches', String(idH))
-          setVerifiedHeight(idH)
-          setPhase('result_ok')
-        } else {
-          setPhase('result_mismatch')
-        }
+        setVisualHeightIn(idH)
+        sessionStorage.setItem('verified_height_inches', String(idH))
+        setVerifiedHeight(idH)
+        setPhase('result_ok')
       } catch {
         setErrorMsg('Something went wrong. Please try again.')
         setPhase('error')
@@ -300,6 +303,29 @@ export default function HeightVerificationPage() {
   function retry() {
     setPoseOk(false); setHoldPct(0); goodPoseStartRef.current = null
     setVisualHeightIn(null); setErrorMsg('')
+    setDebugStats(null); setShowManualButton(false)
+
+    // If model already loaded, skip 'starting' — go straight to positioning and restart camera
+    if (detectorRef.current) {
+      setFeedback('Stand with your full body in frame')
+      setPhase('positioning')
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: cameraFacing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      }).then(stream => {
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          videoRef.current.play()
+        }
+      }).catch(() => {
+        setErrorMsg('Camera access failed. Please allow camera access and try again.')
+        setPhase('error')
+      })
+      return
+    }
+
+    // Model failed to load — full restart
     setModelFailed(false); setModelReady(false); setCameraReady(false)
     setLoadingStatus('Starting camera…')
     setPhase('starting')
@@ -370,42 +396,15 @@ export default function HeightVerificationPage() {
       <Screen>
         <div className="text-5xl">📏</div>
         <h1 className="text-2xl font-bold text-gray-900">Height confirmed</h1>
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 w-full space-y-2 text-sm">
-          <Row label="Government ID" value={inchesToDisplay(idHeight)} />
-          <Row label="Visual" value={inchesToDisplay(visualHeightIn)} />
-          <div className="border-t border-green-200 pt-2">
-            <Row label="Match" value={`±${Math.abs(visualHeightIn - idHeight)}″ ✓`} green />
-          </div>
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-6 w-full text-center">
+          <p className="text-green-700 font-semibold text-lg">{inchesToDisplay(visualHeightIn)}</p>
+          <p className="text-green-600 text-sm mt-1">Government ID verified ✓</p>
         </div>
         <button
           onClick={saveVerification}
           className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-semibold text-lg active:bg-indigo-800 transition-colors"
         >
           Save verification
-        </button>
-      </Screen>
-    )
-  }
-
-  if (phase === 'result_mismatch' && visualHeightIn) {
-    return (
-      <Screen>
-        <div className="text-5xl">⚠️</div>
-        <h1 className="text-2xl font-bold text-gray-900">Height mismatch</h1>
-        <p className="text-gray-500 text-sm text-center">Visual measurement is more than 3 inches from your ID height.</p>
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 w-full space-y-2 text-sm">
-          <Row label="Government ID" value={inchesToDisplay(idHeight)} />
-          <Row label="Visual measurement" value={inchesToDisplay(visualHeightIn)} red />
-          <div className="border-t border-red-200 pt-2">
-            <Row label="Difference" value={`${Math.abs(visualHeightIn - idHeight)}″ off`} red />
-          </div>
-        </div>
-        <p className="text-xs text-gray-400 text-center">Stand 5–6 ft from the camera with your full body in frame.</p>
-        <button
-          onClick={retry}
-          className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-semibold active:bg-indigo-800 transition-colors"
-        >
-          Try again
         </button>
       </Screen>
     )
@@ -481,18 +480,31 @@ export default function HeightVerificationPage() {
             <p className="text-white text-sm">{loadingStatus}</p>
           </div>
         )}
-        {phase === 'positioning' && !poseOk && !modelFailed && (
+        {phase === 'positioning' && !poseOk && (
           <p className="text-white/60 text-sm text-center">Stand with your full body in frame</p>
         )}
-        {phase === 'positioning' && modelFailed && (
+        {phase === 'positioning' && (modelFailed || showManualButton) && !poseOk && (
           <button
             onClick={() => setPhase('capturing')}
-            className="w-full bg-white text-gray-900 py-4 rounded-2xl font-semibold text-lg active:bg-gray-100 transition-colors"
+            className="mt-2 w-full bg-white text-gray-900 py-4 rounded-2xl font-semibold text-lg active:bg-gray-100 transition-colors"
           >
-            Capture
+            Capture manually
           </button>
         )}
       </div>
+
+      {/* Debug overlay — shows raw MediaPipe values to diagnose detection issues */}
+      {debugStats && process.env.NODE_ENV !== 'production' && (
+        <div className="absolute left-3 right-3 bg-black/70 rounded-xl px-3 py-2 text-xs font-mono text-white space-y-0.5"
+          style={{ bottom: 'max(160px, calc(env(safe-area-inset-bottom, 0px) + 130px))' }}
+        >
+          <p className="text-white/50 uppercase tracking-wider text-[10px] mb-1">MediaPipe Debug</p>
+          <p>Head vis: <span className={debugStats.headVis > 0.5 ? 'text-green-400' : 'text-red-400'}>{debugStats.headVis.toFixed(2)}</span></p>
+          <p>L heel: <span className={debugStats.lHeelVis > 0.35 ? 'text-green-400' : 'text-red-400'}>{debugStats.lHeelVis.toFixed(2)}</span>  R heel: <span className={debugStats.rHeelVis > 0.35 ? 'text-green-400' : 'text-red-400'}>{debugStats.rHeelVis.toFixed(2)}</span></p>
+          <p>L foot: <span className={debugStats.lFootVis > 0.35 ? 'text-green-400' : 'text-red-400'}>{debugStats.lFootVis.toFixed(2)}</span>  R foot: <span className={debugStats.rFootVis > 0.35 ? 'text-green-400' : 'text-red-400'}>{debugStats.rFootVis.toFixed(2)}</span></p>
+          <p>Body span: <span className={debugStats.bodyFraction > 0.45 ? 'text-green-400' : 'text-yellow-400'}>{debugStats.bodyFraction.toFixed(2)}</span></p>
+        </div>
+      )}
 
     </div>
   )

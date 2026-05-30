@@ -10,39 +10,24 @@ export async function POST(req: NextRequest) {
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
-      max_tokens: 300,
+      max_tokens: 150,
       messages: [
         {
           role: 'user',
           content: [
             {
               type: 'text',
-              text: `Analyze this full-body photo and estimate the person's height.
-
-Respond with ONLY valid JSON — no markdown, no explanation.
+              text: `Look at this photo and answer two questions. Respond with ONLY valid JSON — no markdown, no explanation.
 
 {
-  "fullBodyVisible": boolean,
   "singlePerson": boolean,
-  "cameraParallel": boolean,
-  "estimatedHeightInches": number or null,
-  "confidence": "high" | "medium" | "low",
+  "fullBodyVisible": boolean,
   "feedback": string
 }
 
-fullBodyVisible: true only if the complete body is visible from crown of head to feet on the floor
-singlePerson: true if exactly one person is in the frame
-cameraParallel: true if the person is facing the camera straight on, not turned at an angle that would foreshorten their height
-
-estimatedHeightInches: estimate the person's height in inches using body proportion analysis:
-  - Use the ratio of head size to total body height (average head is ~1/7.5 of total height)
-  - Cross-check with leg length (~47% of height) and torso length
-  - Consider the person's build and typical human proportions
-  - Round to the nearest whole inch
-  Only compute if fullBodyVisible, singlePerson, and cameraParallel are all true.
-
-confidence: high if proportions are clear and consistent, medium if estimate is rough, low if image quality is poor
-feedback: one short instruction for the first failed condition, or empty string if all pass`,
+singlePerson: true if exactly one person is visible in the frame
+fullBodyVisible: true if the person's body is roughly visible from head to around their feet — be lenient, partial feet or slightly cropped is fine
+feedback: one short instruction if either check failed, otherwise empty string`,
             },
             {
               type: 'image_url',
