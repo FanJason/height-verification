@@ -56,11 +56,6 @@ function WheelPicker({ items, initial, onChange, formatItem }: WheelPickerProps)
         className="absolute inset-x-0 bottom-0 z-10 pointer-events-none"
         style={{ height: ITEM_H * 2, background: 'linear-gradient(to top, white 20%, transparent)' }}
       />
-      {/* center selector highlight */}
-      <div
-        className="absolute inset-x-3 z-10 pointer-events-none rounded-2xl bg-gray-100"
-        style={{ top: ITEM_H * 2, height: ITEM_H }}
-      />
       <div
         ref={ref}
         onScroll={handleScroll}
@@ -153,7 +148,7 @@ export default function ClaimHeightPage() {
           <p className="text-6xl font-bold text-gray-900 tracking-tight">
             {feet}&apos;{inches}&quot;
           </p>
-          <p className="text-sm text-gray-400 mt-2">{feet * 12 + inches} inches total</p>
+          <p className="text-sm text-gray-400 mt-2">{Math.round((feet * 12 + inches) * 2.54)} cm</p>
         </div>
 
         <button
