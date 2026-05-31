@@ -8,7 +8,6 @@ type Phase =
   | 'starting'
   | 'positioning'
   | 'capturing'
-  | 'analyzing'
   | 'result_ok'
   | 'saving'
   | 'done'
@@ -273,48 +272,19 @@ export default function HeightVerificationPage() {
     return () => cancelAnimationFrame(rafRef.current)
   }, [phase])
 
-  // Capture + analyze
+  // Capture — MediaPipe already verified full body, go straight to result
   useEffect(() => {
     if (phase !== 'capturing') return
 
-    async function analyze() {
-      const frame = captureFrame(0.95)
-      if (!frame) { setErrorMsg('Capture failed.'); setPhase('error'); return }
-      stopCamera()
-      setPhase('analyzing')
+    const frame = captureFrame(0.95)
+    if (!frame) { setErrorMsg('Capture failed.'); setPhase('error'); return }
+    stopCamera()
 
-      try {
-        const res = await fetch('/api/verify-height-visual', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: frame }),
-        })
-        const data = await res.json()
-
-        if (!data.singlePerson) {
-          setErrorMsg('Only one person should be in frame. Please try again alone.')
-          setPhase('error')
-          return
-        }
-        if (!data.fullBodyVisible) {
-          setErrorMsg(data.feedback || 'Full body not visible. Make sure you are head-to-toe in frame.')
-          setPhase('error')
-          return
-        }
-
-        // MediaPipe already verified full-body pose — use ID height as verified height
-        const idH = Number(sessionStorage.getItem('id_height_inches'))
-        setVisualHeightIn(idH)
-        sessionStorage.setItem('verified_height_inches', String(idH))
-        setVerifiedHeight(idH)
-        setPhase('result_ok')
-      } catch {
-        setErrorMsg('Something went wrong. Please try again.')
-        setPhase('error')
-      }
-    }
-
-    analyze()
+    const idH = Number(sessionStorage.getItem('id_height_inches'))
+    setVisualHeightIn(idH)
+    sessionStorage.setItem('verified_height_inches', String(idH))
+    setVerifiedHeight(idH)
+    setPhase('result_ok')
   }, [phase, captureFrame, stopCamera])
 
   async function saveVerification() {
@@ -418,17 +388,7 @@ export default function HeightVerificationPage() {
     )
   }
 
-  if (phase === 'analyzing') {
-    return (
-      <Screen>
-        <Spinner />
-        <p className="text-gray-600 font-medium text-lg">Measuring your height…</p>
-        <p className="text-gray-400 text-sm">Analyzing body proportions</p>
-      </Screen>
-    )
-  }
-
-  if (phase === 'result_ok' && visualHeightIn) {
+if (phase === 'result_ok' && visualHeightIn) {
     return (
       <Screen>
         <div className="text-5xl">📏</div>
