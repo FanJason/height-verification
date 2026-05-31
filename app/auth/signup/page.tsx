@@ -2,9 +2,11 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
 
 export default function SignupPage() {
+  const router = useRouter()
   const [showEmail, setShowEmail] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -12,7 +14,6 @@ export default function SignupPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
-  const [confirmed, setConfirmed] = useState(false)
 
   async function handleGoogle() {
     setGoogleLoading(true)
@@ -31,29 +32,10 @@ export default function SignupPage() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: { full_name: name.trim() },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
+      options: { data: { full_name: name.trim() } },
     })
     if (error) { setError(error.message); setLoading(false); return }
-    setConfirmed(true)
-  }
-
-  if (confirmed) {
-    return (
-      <main className="min-h-screen flex items-center justify-center px-6 bg-white">
-        <div className="max-w-sm w-full text-center space-y-5">
-          <div className="text-5xl">✉️</div>
-          <h1 className="text-2xl font-bold text-gray-900">Check your email</h1>
-          <p className="text-gray-500 text-sm">
-            We sent a confirmation link to <strong>{email}</strong>.
-            Click it to activate your account and start verification.
-          </p>
-          <p className="text-xs text-gray-400">Didn&apos;t get it? Check your spam folder.</p>
-        </div>
-      </main>
-    )
+    router.push('/verify')
   }
 
   return (
