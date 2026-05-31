@@ -370,10 +370,10 @@ export default function HeightVerificationPage() {
         <p className="text-5xl font-bold text-indigo-600">{inchesToDisplay(verifiedHeight)}</p>
         <p className="text-gray-500">Your height is permanently verified on your account.</p>
         <button
-          onClick={() => router.push('/profile')}
+          onClick={() => router.push('/')}
           className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-semibold text-lg active:bg-indigo-800 transition-colors"
         >
-          View my profile
+          Done
         </button>
       </Screen>
     )

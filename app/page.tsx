@@ -39,9 +39,6 @@ export default async function Home() {
                 Verified {new Date(verification.verified_at).toLocaleDateString()}
               </p>
             </div>
-            <Link href="/profile" className="block w-full bg-gray-900 text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition-colors">
-              View profile
-            </Link>
             <p className="text-center text-xs text-gray-300">
               <Link href="/verify" className="hover:text-gray-400 transition-colors">
                 Re-verify height
